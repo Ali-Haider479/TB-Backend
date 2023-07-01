@@ -1,11 +1,11 @@
 const pgp = require("pg-promise")();
 
 const db = pgp({
-  user: "alihaider",
-  host: "localhost",
-  database: "tradingbot",
-  password: "11223344",
-  port: 5432,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
 });
 
 // db.any("SELECT datname FROM pg_database WHERE datistemplate = false")

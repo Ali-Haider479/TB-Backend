@@ -2,6 +2,15 @@ const db = require("../../config/db");
 // import db from "../../config/db";/
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const AWS = require("aws-sdk");
+
+const options = {
+  accessKeyId: process.env.AWS_ACCESS_KEY,
+  secretAccessKey: process.env.AWS_SECRET_KEY,
+  region: process.env.AWS_REGION,
+};
+
+const SES = new AWS.SES(options);
 
 exports.createUser = async (req, res) => {
   const { firstName, lastName, email, password, phone_no } = req.body;
@@ -30,6 +39,27 @@ exports.createUser = async (req, res) => {
       "INSERT INTO users (first_name, last_name, email, password, phone_no, verification_key) VALUES ($1, $2, $3, $4, $5, $6)",
       [firstName, lastName, email, passwordHash, phone_no, verification_key]
     );
+
+    const params = {
+      Source: "alihaider15915a@gmail.com",
+      Destination: {
+        ToAddresses: [`${email}`],
+      },
+      ReplyToAddresses: [],
+      Message: {
+        Body: {
+          Html: {
+            Charset: "UTF-8",
+            Data: `Hello Sir, this is your verification code: ${verification_key}`,
+          },
+        },
+        Subject: {
+          Charset: "UTF-8",
+          Data: `Verification Code`,
+        },
+      },
+    };
+    await SES.sendEmail(params).promise();
 
     res
       .status(200)
@@ -90,11 +120,11 @@ exports.loginUser = async (req, res) => {
       });
     }
 
-    if (!user.account_verified) {
-      return res.status(401).json({
-        error: "Account not verified.",
-      });
-    }
+    // if (!user.account_verified) {
+    //   return res.status(401).json({
+    //     error: "Account not verified.",
+    //   });
+    // }
 
     const userForToken = {
       email: user.email,
@@ -109,6 +139,7 @@ exports.loginUser = async (req, res) => {
       firstName: user.first_name,
       lastName: user.last_name,
       email: user.email,
+      accountVerified: user.account_verified,
       token,
     };
     console.log(responseBody);
