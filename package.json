@@ -1,0 +1,24 @@
+{
+  "name": "TB-Backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon src/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "bcrypt": "^5.1.0",
+    "binance": "^2.8.5",
+    "body-parser": "^1.20.2",
+    "ccxt": "^3.1.55",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "next-auth": "^4.22.1",
+    "pg": "^8.11.0",
+    "pg-promise": "^11.5.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
