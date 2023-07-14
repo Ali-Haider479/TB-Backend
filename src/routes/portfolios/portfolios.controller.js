@@ -172,6 +172,8 @@ const getExchangeAsset = async (exchange) => {
       for (const asset of result) {
         if (asset.coin === "USDT") {
           asset["usdt_price"] = +asset.free;
+          asset["availableBalance"] = asset.free;
+          asset["balance"] = asset.free;
           asset["asset"] = asset.coin;
         } else {
           // const symbol = asset.coin;
@@ -182,6 +184,8 @@ const getExchangeAsset = async (exchange) => {
             const usdtPrice = ticker.last;
             const usdtBalance = parseFloat(asset.free) * usdtPrice;
             asset["usdt_price"] = usdtBalance;
+            asset["availableBalance"] = asset.free;
+            asset["balance"] = asset.free;
             asset["asset"] = asset.coin;
           } catch (err) {
             console.log(err);
