@@ -139,31 +139,22 @@ const getExchangeAsset = async (exchange) => {
   }
   if (exchange?.exchangeType === "Binance Spot") {
     console.log("Spot");
-    client = new MainClient();
+    client = new MainClient({
+      api_key: exchange?.apiKey,
+      api_secret: exchange?.secretKey,
+      recvWindow: 10000,
+    });
   }
 
   const binance = new ccxt.binance();
 
   try {
     let result;
-    if (exchange?.exchangeName === "Binance Spot") {
-      console.log("Testing new server.");
-      await fetch("https://binance1.herokuapp.com/api/binance/balances", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(exchange),
-      })
-        .then((response) => response.json())
-        .then((data) => {
-          result = data.filter((item) => cryptoSymbols.includes(item.coin));
-          // result = data;
-          console.log("Result from server: ", data);
-        })
-        .catch((error) => {
-          console.error("Error:", error);
-        });
+    if (exchange?.exchangeType === "Binance Spot") {
+      console.log("Binance Spot Block");
+      let data = await client.getBalances();
+      // console.log("Result from server: ", data);
+      result = data.filter((item) => cryptoSymbols.includes(item.coin));
 
       console.log("getBalance result: ", result);
     } else {
@@ -175,7 +166,7 @@ const getExchangeAsset = async (exchange) => {
 
     //   const transformedResult = [];
 
-    if (exchange?.exchangeName === "Binance Spot") {
+    if (exchange?.exchangeType === "Binance Spot") {
       console.log("spot is", result);
       // const newResult = result.filter(exchange=> exchange.free !== "0")
       for (const asset of result) {

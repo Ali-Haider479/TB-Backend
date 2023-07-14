@@ -5,6 +5,7 @@ const usersRoutes = require("./routes/users/users.routes");
 const exchangesRoutes = require("./routes/exchanges/exchanges.routes");
 const portfoliosRoutes = require("./routes/portfolios/portfolios.routes");
 const balanceHistoryRoutes = require("./routes/balance_history/balance_history.routes");
+const assetsRoutes = require("./routes/assets/assets.routes");
 
 const cors = require("cors");
 
@@ -20,6 +21,7 @@ app.use("/users", usersRoutes);
 app.use("/exchanges", exchangesRoutes);
 app.use("/portfolios", portfoliosRoutes);
 app.use("/balance-history", balanceHistoryRoutes);
+app.use("/assets", assetsRoutes);
 
 // "/" route
 app.get("/", (req, res) => {
