@@ -1,6 +1,7 @@
 const db = require("../../config/db");
 // import db from "../../config/db";/
 const jwt = require("jsonwebtoken");
+const fetch = require("node-fetch");
 
 const { USDMClient, MainClient } = require("binance");
 const ccxt = require("ccxt");
@@ -173,7 +174,7 @@ const getExchangeAsset = async (exchange) => {
 
   try {
     let result;
-    if (exchange?.exchangeName === "Binance Spot") {
+    if (exchange?.exchangeType === "Binance Spot") {
       console.log("Testing new server.");
       await fetch("https://binance1.herokuapp.com/api/binance/balances", {
         method: "POST",
