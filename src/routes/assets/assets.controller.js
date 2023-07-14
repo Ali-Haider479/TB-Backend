@@ -4,12 +4,12 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 exports.getAllLatestBalanceHistoryByUserId = async (req, res) => {
-  const userId = parseInt(req.params.id);
+  const portfolioId = parseInt(req.params.id);
 
   try {
     const exchanges = await db.any(
-      "SELECT * FROM exchanges WHERE user_id = $1",
-      [userId]
+      "SELECT * FROM portfolio WHERE user_id = $1",
+      [portfolioId]
     );
 
     const exchangeBalanceHistory = await Promise.all(
