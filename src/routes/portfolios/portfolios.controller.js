@@ -62,9 +62,27 @@ exports.getAllPortfolioByUserId = async (req, res) => {
           secretKey: exchange.secret_key,
         });
 
-        const portfolios = await db.any(
-          "SELECT * FROM portfolios WHERE exchange_id = $1",
-          [exchange.id]
+        // const portfolios = await db.any(
+        //   "SELECT * FROM portfolios WHERE exchange_id = $1",
+        //   [exchange.id]
+        // );
+
+        const totalUsdtPrice = assets.reduce((sum, item) => {
+          const usdtPrice =
+            typeof item.usdt_price === "string"
+              ? parseFloat(item.usdt_price)
+              : item.usdt_price;
+          return sum + usdtPrice;
+        }, 0);
+
+        console.log(totalUsdtPrice);
+
+        const portfolios = await db.one(
+          `UPDATE portfolios 
+          SET balance = $1, locked_balance = $2 
+          WHERE exchange_id = $3 
+          RETURNING *`,
+          [totalUsdtPrice, totalUsdtPrice, exchange.id]
         );
 
         return {
