@@ -50,6 +50,12 @@ exports.createExchange = async (req, res) => {
         typeof item.usdt_price === "string"
           ? parseFloat(item.usdt_price)
           : item.usdt_price;
+
+      // Check if usdtPrice is undefined or NaN
+      if (usdtPrice === undefined || isNaN(usdtPrice)) {
+        return sum; // Return current sum without adding
+      }
+
       return sum + usdtPrice;
     }, 0);
 
@@ -183,7 +189,7 @@ const getExchangeAsset = async (exchange) => {
       console.log("Binance Spot Block");
       let data = await client.getBalances();
       // console.log("Result from server: ", data);
-      result = data.filter((item) => cryptoSymbols.includes(item.coin));
+      result = data.filter((item) => parseFloat(item.free) > 0);
 
       console.log("getBalance result: ", result);
     } else {
@@ -204,11 +210,17 @@ const getExchangeAsset = async (exchange) => {
           asset["asset"] = asset.coin;
           asset["balance"] = asset.free;
         } else {
-          // const symbol = asset.coin;
+          const symbol = `${asset.coin}/USDT`;
+          console.log(symbol);
           try {
-            const symbol = `${asset.coin}/USDT`;
-
             const ticker = await binance.fetchTicker(symbol);
+
+            // Add the check here
+            if (ticker === undefined) {
+              console.log(`Ticker for ${symbol} is undefined.`);
+              continue; // Skip to the next iteration
+            }
+
             const usdtPrice = ticker.last;
             const usdtBalance = parseFloat(asset.free) * usdtPrice;
             asset["usdt_price"] = usdtBalance;
@@ -216,10 +228,36 @@ const getExchangeAsset = async (exchange) => {
             asset["balance"] = asset.free;
           } catch (err) {
             console.log(err);
+            const symbol = `${asset.coin}/BUSD`;
+            console.log(symbol);
+            try {
+              const ticker = await binance.fetchTicker(symbol);
+
+              // Add the check here too
+              if (ticker === undefined) {
+                console.log(`Ticker for ${symbol} is undefined.`);
+                continue; // Skip to the next iteration
+              }
+
+              const usdtPrice = ticker.last;
+              const usdtBalance = parseFloat(asset.free) * usdtPrice;
+              asset["usdt_price"] = usdtBalance;
+              asset["asset"] = asset.coin;
+              asset["balance"] = asset.free;
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
         const { asset: coin_name, balance: quantity, usdt_price } = asset;
-        transformedResult.push({ coin_name, quantity, usdt_price });
+        if (
+          coin_name !== undefined &&
+          quantity !== undefined &&
+          usdt_price !== undefined &&
+          !isNaN(usdt_price)
+        ) {
+          transformedResult.push({ coin_name, quantity, usdt_price });
+        }
       }
     } else {
       for (const asset of result) {

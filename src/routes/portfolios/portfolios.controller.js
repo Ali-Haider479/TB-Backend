@@ -61,63 +61,92 @@ exports.getAllPortfolioByUserId = async (req, res) => {
       [userId]
     );
 
-    const exchangeAssets = await Promise.all(
-      exchanges.map(async (exchange) => {
-        const assets = await getExchangeAsset({
-          exchangeName: exchange.exchange_name,
-          exchangeType: exchange.exchange_type,
-          apiKey: exchange.api_key,
-          secretKey: exchange.secret_key,
-        });
+    let result = [];
 
-        // const portfolios = await db.any(
-        //   "SELECT * FROM portfolios WHERE exchange_id = $1",
-        //   [exchange.id]
-        // );
+    for (const exchange of exchanges) {
+      const [portfolio] = await db.any(
+        "SELECT * FROM portfolios WHERE exchange_id = $1",
+        [exchange.id]
+      );
+      console.log(portfolio);
 
-        const totalUsdtPrice = assets.reduce((sum, item) => {
-          console.log(item.coin, item.usdt_price);
-          let usdtPrice =
-            typeof item.usdt_price === "string"
-              ? parseFloat(item.usdt_price)
-              : item.usdt_price;
+      const assets = await db.any(
+        "SELECT * FROM assets WHERE portfolio_id = $1",
+        [portfolio.id]
+      );
 
-          // If usdtPrice is NaN or undefined, consider it as 0
-          if (isNaN(usdtPrice) || usdtPrice === undefined) {
-            usdtPrice = 0;
-          }
+      result.push({
+        exchange,
+        portfolio,
+        assets,
+      });
+    }
 
-          return sum + usdtPrice;
-        }, 0);
+    res.status(200).json(result);
+    // return result;
 
-        // const totalUsdtPrice = assets.reduce((sum, item) => {
-        //   console.log(item.coin, item.usdt_price);
-        //   const usdtPrice =
-        //     typeof item.usdt_price === "string"
-        //       ? parseFloat(item.usdt_price)
-        //       : item.usdt_price;
-        //   return sum + usdtPrice;
-        // }, 0);
+    // const exchanges = await db.any(
+    //   "SELECT * FROM exchanges WHERE user_id = $1",
+    //   [userId]
+    // );
 
-        console.log("totalUsdtPrice", totalUsdtPrice);
+    // const exchangeAssets = await Promise.all(
+    //   exchanges.map(async (exchange) => {
+    //     const assets = await getExchangeAsset({
+    //       exchangeName: exchange.exchange_name,
+    //       exchangeType: exchange.exchange_type,
+    //       apiKey: exchange.api_key,
+    //       secretKey: exchange.secret_key,
+    //     });
 
-        const portfolios = await db.one(
-          `UPDATE portfolios 
-          SET balance = $1, locked_balance = $2 
-          WHERE exchange_id = $3 
-          RETURNING *`,
-          [totalUsdtPrice, totalUsdtPrice, exchange.id]
-        );
+    //     // const portfolios = await db.any(
+    //     //   "SELECT * FROM portfolios WHERE exchange_id = $1",
+    //     //   [exchange.id]
+    //     // );
 
-        return {
-          exchange,
-          assets: assets,
-          portfolios,
-        };
-      })
-    );
+    //     const totalUsdtPrice = assets.reduce((sum, item) => {
+    //       console.log(item.coin, item.usdt_price);
+    //       let usdtPrice =
+    //         typeof item.usdt_price === "string"
+    //           ? parseFloat(item.usdt_price)
+    //           : item.usdt_price;
 
-    res.status(200).json(exchangeAssets);
+    //       // If usdtPrice is NaN or undefined, consider it as 0
+    //       if (isNaN(usdtPrice) || usdtPrice === undefined) {
+    //         usdtPrice = 0;
+    //       }
+
+    //       return sum + usdtPrice;
+    //     }, 0);
+
+    //     // const totalUsdtPrice = assets.reduce((sum, item) => {
+    //     //   console.log(item.coin, item.usdt_price);
+    //     //   const usdtPrice =
+    //     //     typeof item.usdt_price === "string"
+    //     //       ? parseFloat(item.usdt_price)
+    //     //       : item.usdt_price;
+    //     //   return sum + usdtPrice;
+    //     // }, 0);
+
+    //     console.log("totalUsdtPrice", totalUsdtPrice);
+
+    //     const portfolios = await db.one(
+    //       `UPDATE portfolios
+    //       SET balance = $1, locked_balance = $2
+    //       WHERE exchange_id = $3
+    //       RETURNING *`,
+    //       [totalUsdtPrice, totalUsdtPrice, exchange.id]
+    //     );
+
+    //     return {
+    //       exchange,
+    //       assets: assets,
+    //       portfolios,
+    //     };
+    //   })
+    // );
+
+    // res.status(200).json(exchangeAssets);
   } catch (error) {
     res.status(500).json({ error: "Error connecting to PostgreSQL:", error });
   }
@@ -258,15 +287,23 @@ const getExchangeAsset = async (exchange) => {
           asset["asset"] = asset.coin;
         } else {
           // const symbol = asset.coin;
+          const symbol = `${asset.coin}/USDT`;
+          console.log(symbol);
           try {
-            const symbol = `${asset.coin}/USDT`;
             const ticker = await binance.fetchTicker(symbol);
+            // Add the check here
+            if (ticker === undefined) {
+              console.log(`Ticker for ${symbol} is undefined.`);
+              continue; // Skip to the next iteration
+            }
             const usdtPrice = ticker.last;
-            const usdtBalance = parseFloat(asset.free) * usdtPrice;
-            asset["usdt_price"] = usdtBalance;
-            asset["availableBalance"] = asset.free;
-            asset["balance"] = asset.free;
-            asset["asset"] = asset.coin;
+            if (usdtPrice !== undefined && !isNaN(usdtPrice)) {
+              const usdtBalance = parseFloat(asset.free) * usdtPrice;
+              asset["usdt_price"] = usdtBalance;
+              asset["availableBalance"] = asset.free;
+              asset["balance"] = asset.free;
+              asset["asset"] = asset.coin;
+            }
             // let markets = await binance.loadMarkets();
             // if (symbol in markets) {
             //   // symbol is supported
@@ -291,6 +328,27 @@ const getExchangeAsset = async (exchange) => {
             // }
           } catch (err) {
             console.log(err);
+            const symbol = `${asset.coin}/BUSD`;
+            console.log(symbol);
+            try {
+              const ticker = await binance.fetchTicker(symbol);
+
+              // Add the check here too
+              if (ticker === undefined) {
+                console.log(`Ticker for ${symbol} is undefined.`);
+                continue; // Skip to the next iteration
+              }
+
+              const usdtPrice = ticker.last;
+              if (usdtPrice !== undefined && !isNaN(usdtPrice)) {
+                const usdtBalance = parseFloat(asset.free) * usdtPrice;
+                asset["usdt_price"] = usdtBalance;
+                asset["asset"] = asset.coin;
+                asset["balance"] = asset.free;
+              }
+            } catch (error) {
+              console.log(error);
+            }
           }
         }
         const { asset: coin_name, balance: quantity, usdt_price } = asset;
