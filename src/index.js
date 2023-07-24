@@ -28,6 +28,8 @@ app.get("/", (req, res) => {
   res.send("v1.0.0");
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`App running on port ${port}.`);
 });
+
+server.setTimeout = 180000;
