@@ -26,7 +26,15 @@ const cryptoSymbols = [
   "XTZ", // Tezos
   "VET", // VeChain
   "DASH", // Dash
-  "ZEC", // Zcash
+  "ZEC", // Zcash,
+  "XYM",
+  "DCR",
+  "IQ",
+  "CTSI",
+  "AERGO",
+  "ARK",
+  "TROY",
+  "LIT",
 ];
 
 // exports.getAllPortfolioByUserId = (req, res) => {
@@ -68,14 +76,30 @@ exports.getAllPortfolioByUserId = async (req, res) => {
         // );
 
         const totalUsdtPrice = assets.reduce((sum, item) => {
-          const usdtPrice =
+          console.log(item.coin, item.usdt_price);
+          let usdtPrice =
             typeof item.usdt_price === "string"
               ? parseFloat(item.usdt_price)
               : item.usdt_price;
+
+          // If usdtPrice is NaN or undefined, consider it as 0
+          if (isNaN(usdtPrice) || usdtPrice === undefined) {
+            usdtPrice = 0;
+          }
+
           return sum + usdtPrice;
         }, 0);
 
-        console.log(totalUsdtPrice);
+        // const totalUsdtPrice = assets.reduce((sum, item) => {
+        //   console.log(item.coin, item.usdt_price);
+        //   const usdtPrice =
+        //     typeof item.usdt_price === "string"
+        //       ? parseFloat(item.usdt_price)
+        //       : item.usdt_price;
+        //   return sum + usdtPrice;
+        // }, 0);
+
+        console.log("totalUsdtPrice", totalUsdtPrice);
 
         const portfolios = await db.one(
           `UPDATE portfolios 
@@ -97,6 +121,43 @@ exports.getAllPortfolioByUserId = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: "Error connecting to PostgreSQL:", error });
   }
+};
+
+exports.getAssetsSymbolByUserId = async (req, res) => {
+  const userId = parseInt(req.params.id);
+  try {
+    const exchanges = await db.any(
+      "SELECT * FROM exchanges WHERE user_id = $1",
+      [userId]
+    );
+    const exchangeAssets = await Promise.all(
+      exchanges.map(async (exchange) => {
+        const assetsSymbols = await getExchangeAssetSymbol({
+          exchangeName: exchange.exchange_name,
+          exchangeType: exchange.exchange_type,
+          apiKey: exchange.api_key,
+          secretKey: exchange.secret_key,
+        });
+
+        console.log("symbols", assetsSymbols);
+
+        // const portfolios = await db.one(
+        //   `UPDATE portfolios
+        //   SET balance = $1, locked_balance = $2
+        //   WHERE exchange_id = $3
+        //   RETURNING *`,
+        //   [totalUsdtPrice, totalUsdtPrice, exchange.id]
+        // );
+
+        return {
+          exchange,
+          assetsSymbols,
+        };
+      })
+    );
+
+    res.status(200).json(exchangeAssets);
+  } catch (error) {}
 };
 
 exports.getExchangePortfolio = (req, res) => {
@@ -172,7 +233,9 @@ const getExchangeAsset = async (exchange) => {
       console.log("Binance Spot Block");
       let data = await client.getBalances();
       // console.log("Result from server: ", data);
-      result = data.filter((item) => cryptoSymbols.includes(item.coin));
+      result = data.filter((item) => parseFloat(item.free) > 0);
+
+      // result = data.filter((item) => cryptoSymbols.includes(item.coin));
 
       console.log("getBalance result: ", result);
     } else {
@@ -197,7 +260,6 @@ const getExchangeAsset = async (exchange) => {
           // const symbol = asset.coin;
           try {
             const symbol = `${asset.coin}/USDT`;
-
             const ticker = await binance.fetchTicker(symbol);
             const usdtPrice = ticker.last;
             const usdtBalance = parseFloat(asset.free) * usdtPrice;
@@ -205,6 +267,28 @@ const getExchangeAsset = async (exchange) => {
             asset["availableBalance"] = asset.free;
             asset["balance"] = asset.free;
             asset["asset"] = asset.coin;
+            // let markets = await binance.loadMarkets();
+            // if (symbol in markets) {
+            //   // symbol is supported
+            //   try {
+            //     const ticker = await binance.fetchTicker(symbol);
+            //     const usdtPrice = ticker.last;
+            //     const usdtBalance = parseFloat(asset.free) * usdtPrice;
+            //     asset["usdt_price"] = usdtBalance;
+            //     asset["availableBalance"] = asset.free;
+            //     asset["balance"] = asset.free;
+            //     asset["asset"] = asset.coin;
+            //     //...
+            //   } catch (error) {
+            //     if (error instanceof ccxt.BadSymbol) {
+            //       console.log(`Symbol ${symbol} not supported`);
+            //       // handle error appropriately
+            //     } else {
+            //       // rethrow the error if it's not a BadSymbol error
+            //       throw error;
+            //     }
+            //   }
+            // }
           } catch (err) {
             console.log(err);
           }
@@ -229,6 +313,59 @@ const getExchangeAsset = async (exchange) => {
     }
     // console.log(transformedResult);
     return result;
+  } catch (err) {
+    console.error("getBalance error: ", err);
+  }
+};
+
+const getExchangeAssetSymbol = async (exchange) => {
+  console.log("get assets", exchange);
+  let client;
+
+  if (exchange?.exchangeType === "Binance Futures Testnet") {
+    console.log("Testnet");
+    const baseUrl = "https://testnet.binancefuture.com";
+    client = new USDMClient({
+      api_key: exchange?.apiKey,
+      api_secret: exchange?.secretKey,
+      baseUrl,
+      recvWindow: 10000,
+    });
+  }
+  if (exchange?.exchangeType === "Binance Futures") {
+    console.log("Futures");
+    client = new USDMClient({
+      api_key: exchange?.apiKey,
+      api_secret: exchange?.secretKey,
+      recvWindow: 10000,
+    });
+  }
+  if (exchange?.exchangeType === "Binance Spot") {
+    console.log("Spot");
+    client = new MainClient({
+      api_key: exchange?.apiKey,
+      api_secret: exchange?.secretKey,
+      recvWindow: 10000,
+    });
+  }
+
+  try {
+    let result;
+    let newResult;
+    if (exchange?.exchangeType === "Binance Spot") {
+      console.log("Binance Spot Block");
+      let data = await client.getBalances();
+      result = data.filter((item) => parseFloat(item.free) > 0);
+      newResult = result.map((item) => `${item.coin}/USDT`);
+
+      console.log("getBalance result: ", result);
+    } else {
+      result = await client.getBalance();
+      newResult = result.map((item) => `${item.asset}/USDT`);
+      console.log("getBalance result: ", result);
+    }
+    console.log(result);
+    return newResult;
   } catch (err) {
     console.error("getBalance error: ", err);
   }

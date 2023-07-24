@@ -14,6 +14,11 @@ router.get("/user/:id", portfoliosController.getAllPortfolioByUserId);
 router.get("/:id", portfoliosController.getExchangePortfolio);
 //List all Portfolios
 router.get("/", portfoliosController.getPortfolios);
+//get Assets Symbols
+router.get(
+  "/assets/symbols/user/:id",
+  portfoliosController.getAssetsSymbolByUserId
+);
 //Delete an Portfolio
 router.delete("/:id", portfoliosController.deletePortfolio);
 
