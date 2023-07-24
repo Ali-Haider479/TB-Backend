@@ -169,7 +169,11 @@ exports.refreshAndGetAllPortfoliosByUserId = async (req, res) => {
           secretKey: exchange.secret_key,
         });
 
-        console.log("ASSETSSSSADASDASDASD    ",assets);
+        assets.sort((a, b) => b.usdt_price - a.usdt_price);
+
+        console.log("Transformed Result sorted in descending order: ", assets);
+
+
 
         const totalUsdtPrice = assets.reduce((sum, item) => {
           const usdtPrice =
@@ -390,6 +394,11 @@ const getExchangeAsset = async (exchange) => {
 
       const usdtPrice = ticker.last;
       const usdtBalance = parseFloat(quantity) * usdtPrice;
+      if (coin_name === 'USDT'){
+        transformedResult.push({ coin_name, quantity, usdt_price: quantity });
+      }
+      else{
+
 
       if (
         coin_name !== undefined &&
@@ -399,9 +408,12 @@ const getExchangeAsset = async (exchange) => {
       ) {
         transformedResult.push({ coin_name, quantity, usdt_price: usdtBalance });
       }
+    }
     });
+    
 
-    console.log("Transformed: ", transformedResult);
+    const objectCount = transformedResult.filter(Boolean).length;
+    console.log("Number of actual objects in Transformed Result: ", objectCount);
 
     return transformedResult;
   } catch (err) {
@@ -539,6 +551,8 @@ const getExchangeAsset = async (exchange) => {
 //       }
 //     }
 //     // console.log(transformedResult);
+//     console.log("Length of Transformed Result: ", transformedResult.length);
+    
 //     return transformedResult;
 //   } catch (err) {
 //     console.error("getBalance error: ", err);
