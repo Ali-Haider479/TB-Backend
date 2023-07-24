@@ -10,6 +10,11 @@ const portfoliosController = require("./portfolios.controller");
 // router.post("/login", exchangesController.loginUser);
 // Get all Portfolios of different Exchanges that has same user_id
 router.get("/user/:id", portfoliosController.getAllPortfolioByUserId);
+// First Refresh and Get all Portfolios of different Exchanges that has same user_id
+router.get(
+  "/refresh/user/:id",
+  portfoliosController.refreshAndGetAllPortfoliosByUserId
+);
 // Get Portfolio of an Exchange
 router.get("/:id", portfoliosController.getExchangePortfolio);
 //List all Portfolios

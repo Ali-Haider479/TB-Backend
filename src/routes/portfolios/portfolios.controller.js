@@ -152,6 +152,89 @@ exports.getAllPortfolioByUserId = async (req, res) => {
   }
 };
 
+exports.refreshAndGetAllPortfoliosByUserId = async (req, res) => {
+  const userId = parseInt(req.params.id);
+  try {
+    const exchanges = await db.any(
+      "SELECT * FROM exchanges WHERE user_id = $1",
+      [userId]
+    );
+
+    const exchangeAssets = await Promise.all(
+      exchanges.map(async (exchange) => {
+        const assets = await getExchangeAsset({
+          exchangeName: exchange.exchange_name,
+          exchangeType: exchange.exchange_type,
+          apiKey: exchange.api_key,
+          secretKey: exchange.secret_key,
+        });
+
+        console.log(assets);
+
+        const totalUsdtPrice = assets.reduce((sum, item) => {
+          const usdtPrice =
+            typeof item.usdt_price === "string"
+              ? parseFloat(item.usdt_price)
+              : item.usdt_price;
+
+          // Check if usdtPrice is undefined or NaN
+          if (usdtPrice === undefined || isNaN(usdtPrice)) {
+            return sum; // Return current sum without adding
+          }
+
+          return sum + usdtPrice;
+        }, 0);
+
+        console.log("totalUsdtPrice", totalUsdtPrice);
+
+        const portfolio = await db.one(
+          `UPDATE portfolios
+          SET balance = $1, locked_balance = $2
+          WHERE exchange_id = $3
+          RETURNING *`,
+          [totalUsdtPrice, totalUsdtPrice, exchange.id]
+        );
+
+        await db.none("DELETE FROM assets WHERE portfolio_id = $1", [
+          portfolio.id,
+        ]);
+
+        const assetQuery =
+          "INSERT INTO assets (coin_name, quantity, usdt_price, portfolio_id) VALUES ($1, $2, $3, $4)";
+
+        const assetValues = assets.map((asset) => [
+          `${asset.coin_name}`,
+          parseFloat(asset.quantity),
+          typeof asset.usdt_price === "string"
+            ? parseFloat(asset.usdt_price)
+            : asset.usdt_price,
+          portfolio.id, // Replace `portfolioId` with the actual portfolio ID
+        ]);
+
+        await Promise.all(
+          assetValues.map((asset) => db.none(assetQuery, asset))
+        );
+
+        const balanceHistoryQuery =
+          "INSERT INTO balance_history (date, balance, portfolio_id) VALUES (current_timestamp, $1, $2)";
+        const balanceHistoryValues = [totalUsdtPrice, portfolio.id];
+        await db.none(balanceHistoryQuery, balanceHistoryValues);
+
+        return {
+          exchange,
+          portfolio,
+          assets: assets,
+        };
+      })
+    );
+
+    res.status(200).json(exchangeAssets);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Error connecting to PostgreSQL:", err });
+  }
+};
+
 exports.getAssetsSymbolByUserId = async (req, res) => {
   const userId = parseInt(req.params.id);
   try {
@@ -264,8 +347,6 @@ const getExchangeAsset = async (exchange) => {
       // console.log("Result from server: ", data);
       result = data.filter((item) => parseFloat(item.free) > 0);
 
-      // result = data.filter((item) => cryptoSymbols.includes(item.coin));
-
       console.log("getBalance result: ", result);
     } else {
       result = await client.getBalance();
@@ -274,7 +355,7 @@ const getExchangeAsset = async (exchange) => {
     // const result = await client.getBalance();
     // console.log("getBalance result: ", result);
 
-    //   const transformedResult = [];
+    const transformedResult = [];
 
     if (exchange?.exchangeType === "Binance Spot") {
       console.log("spot is", result);
@@ -282,50 +363,25 @@ const getExchangeAsset = async (exchange) => {
       for (const asset of result) {
         if (asset.coin === "USDT") {
           asset["usdt_price"] = +asset.free;
-          asset["availableBalance"] = asset.free;
-          asset["balance"] = asset.free;
           asset["asset"] = asset.coin;
+          asset["balance"] = asset.free;
         } else {
-          // const symbol = asset.coin;
           const symbol = `${asset.coin}/USDT`;
           console.log(symbol);
           try {
             const ticker = await binance.fetchTicker(symbol);
+
             // Add the check here
             if (ticker === undefined) {
               console.log(`Ticker for ${symbol} is undefined.`);
               continue; // Skip to the next iteration
             }
+
             const usdtPrice = ticker.last;
-            if (usdtPrice !== undefined && !isNaN(usdtPrice)) {
-              const usdtBalance = parseFloat(asset.free) * usdtPrice;
-              asset["usdt_price"] = usdtBalance;
-              asset["availableBalance"] = asset.free;
-              asset["balance"] = asset.free;
-              asset["asset"] = asset.coin;
-            }
-            // let markets = await binance.loadMarkets();
-            // if (symbol in markets) {
-            //   // symbol is supported
-            //   try {
-            //     const ticker = await binance.fetchTicker(symbol);
-            //     const usdtPrice = ticker.last;
-            //     const usdtBalance = parseFloat(asset.free) * usdtPrice;
-            //     asset["usdt_price"] = usdtBalance;
-            //     asset["availableBalance"] = asset.free;
-            //     asset["balance"] = asset.free;
-            //     asset["asset"] = asset.coin;
-            //     //...
-            //   } catch (error) {
-            //     if (error instanceof ccxt.BadSymbol) {
-            //       console.log(`Symbol ${symbol} not supported`);
-            //       // handle error appropriately
-            //     } else {
-            //       // rethrow the error if it's not a BadSymbol error
-            //       throw error;
-            //     }
-            //   }
-            // }
+            const usdtBalance = parseFloat(asset.free) * usdtPrice;
+            asset["usdt_price"] = usdtBalance;
+            asset["asset"] = asset.coin;
+            asset["balance"] = asset.free;
           } catch (err) {
             console.log(err);
             const symbol = `${asset.coin}/BUSD`;
@@ -340,19 +396,24 @@ const getExchangeAsset = async (exchange) => {
               }
 
               const usdtPrice = ticker.last;
-              if (usdtPrice !== undefined && !isNaN(usdtPrice)) {
-                const usdtBalance = parseFloat(asset.free) * usdtPrice;
-                asset["usdt_price"] = usdtBalance;
-                asset["asset"] = asset.coin;
-                asset["balance"] = asset.free;
-              }
+              const usdtBalance = parseFloat(asset.free) * usdtPrice;
+              asset["usdt_price"] = usdtBalance;
+              asset["asset"] = asset.coin;
+              asset["balance"] = asset.free;
             } catch (error) {
               console.log(error);
             }
           }
         }
         const { asset: coin_name, balance: quantity, usdt_price } = asset;
-        //   transformedResult.push({ coin_name, quantity, usdt_price });
+        if (
+          coin_name !== undefined &&
+          quantity !== undefined &&
+          usdt_price !== undefined &&
+          !isNaN(usdt_price)
+        ) {
+          transformedResult.push({ coin_name, quantity, usdt_price });
+        }
       }
     } else {
       for (const asset of result) {
@@ -366,11 +427,11 @@ const getExchangeAsset = async (exchange) => {
           asset["usdt_price"] = usdtBalance;
         }
         const { asset: coin_name, balance: quantity, usdt_price } = asset;
-        //   transformedResult.push({ coin_name, quantity, usdt_price });
+        transformedResult.push({ coin_name, quantity, usdt_price });
       }
     }
     // console.log(transformedResult);
-    return result;
+    return transformedResult;
   } catch (err) {
     console.error("getBalance error: ", err);
   }
