@@ -169,7 +169,7 @@ exports.refreshAndGetAllPortfoliosByUserId = async (req, res) => {
           secretKey: exchange.secret_key,
         });
 
-        console.log(assets);
+        console.log("ASSETSSSSADASDASDASD    ",assets);
 
         const totalUsdtPrice = assets.reduce((sum, item) => {
           const usdtPrice =
@@ -351,19 +351,28 @@ const getExchangeAsset = async (exchange) => {
       console.log("getBalance result: ", result);
     }
 
-    const transformedResult = [];
+    let transformedResult = [];
 
-    // prepare fetch promises
     const fetchPromises = result.map((asset) => {
-      if (asset.coin === "USDT" || asset.asset === "USDT") {
-        return Promise.resolve({ asset: asset.coin || asset.asset, usdt_price: asset.balance });
-      }
-      const baseSymbol = `${asset.coin || asset.asset}/USDT`;
-      const alternativeSymbol = `${asset.coin || asset.asset}/BUSD`;
+      return new Promise(async (resolve) => {
+        try {
+          if (asset.coin === "USDT" || asset.asset === "USDT") {
+            resolve({ asset: asset.coin || asset.asset, usdt_price: asset.balance });
+          } else {
+            const baseSymbol = `${asset.coin || asset.asset}/USDT`;
+            const alternativeSymbol = `${asset.coin || asset.asset}/BUSD`;
 
-      return binance.fetchTicker(baseSymbol).catch((err) => {
-        console.log(`Error fetching ${baseSymbol}. Trying ${alternativeSymbol}...`);
-        return binance.fetchTicker(alternativeSymbol);
+            let ticker = await binance.fetchTicker(baseSymbol).catch(() => {
+              console.log(`Error fetching ${baseSymbol}. Trying ${alternativeSymbol}...`);
+              return binance.fetchTicker(alternativeSymbol);
+            });
+
+            resolve(ticker);
+          }
+        } catch (err) {
+          console.log(`Error processing asset ${asset.coin || asset.asset}. Skipping...`);
+          resolve(undefined);
+        }
       });
     });
 
@@ -376,7 +385,7 @@ const getExchangeAsset = async (exchange) => {
 
       if (ticker === undefined) {
         console.log(`Ticker for ${coin_name} is undefined.`);
-        return; // Skip to the next iteration
+        return; 
       }
 
       const usdtPrice = ticker.last;
@@ -392,11 +401,14 @@ const getExchangeAsset = async (exchange) => {
       }
     });
 
+    console.log("Transformed: ", transformedResult);
+
     return transformedResult;
   } catch (err) {
     console.error("getBalance error: ", err);
   }
 };
+
 
 
 // const getExchangeAsset = async (exchange) => {
