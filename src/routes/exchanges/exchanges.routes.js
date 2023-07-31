@@ -8,6 +8,11 @@ router.post("/:id", exchangesController.createExchange);
 // router.patch("/verify-email", exchangesController.verifyUserEmail);
 // //Login User
 // router.post("/login", exchangesController.loginUser);
+//Get User's all Exchanges without Assets
+router.get(
+  "/without-asset/:id",
+  exchangesController.getUserExchangesWithoutAssets
+);
 //Get User's all Exchanges
 router.get("/:id", exchangesController.getUserExchanges);
 //List all Exchanges

@@ -107,6 +107,24 @@ exports.createExchange = async (req, res) => {
   }
 };
 
+exports.getUserExchangesWithoutAssets = async (req, res) => {
+  const userId = parseInt(req.params.id);
+
+  try {
+    const exchanges = await db.any(
+      "SELECT * FROM exchanges WHERE user_id = $1 ORDER BY id ASC",
+      [userId]
+    );
+
+    console.log(exchanges);
+
+    res.status(200).json(exchanges);
+  } catch (error) {
+    console.error("Error connecting to PostgreSQL:", error);
+    res.status(500).json({ error: "Failed to fetch exchanges and assets" });
+  }
+};
+
 exports.getUserExchanges = async (req, res) => {
   const userId = parseInt(req.params.id);
 
