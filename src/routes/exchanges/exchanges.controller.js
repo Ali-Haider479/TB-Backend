@@ -125,6 +125,28 @@ exports.getUserExchangesWithoutAssets = async (req, res) => {
   }
 };
 
+exports.getSingleExchanges = async (req, res) => {
+  const exchangeId = parseInt(req.params.id);
+
+  try {
+    const exchange = await db.oneOrNone(
+      "SELECT * FROM exchanges WHERE id = $1",
+      [exchangeId]
+    );
+
+    console.log(exchange);
+
+    if (exchange) {
+      res.status(200).json(exchange);
+    } else {
+      res.status(404).json({ error: "Exchange not found" });
+    }
+  } catch (error) {
+    console.error("Error connecting to PostgreSQL:", error);
+    res.status(500).json({ error: "Failed to fetch the exchange" });
+  }
+};
+
 exports.getUserExchanges = async (req, res) => {
   const userId = parseInt(req.params.id);
 

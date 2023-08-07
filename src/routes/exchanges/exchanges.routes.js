@@ -15,6 +15,8 @@ router.get(
 );
 //Get User's all Exchanges
 router.get("/:id", exchangesController.getUserExchanges);
+//Get single Exchanges
+router.get("/single/:id", exchangesController.getSingleExchanges);
 //List all Exchanges
 router.get("/", exchangesController.getExchanges);
 //Delete an Exchange
