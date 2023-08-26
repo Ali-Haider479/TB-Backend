@@ -221,6 +221,23 @@ const getExchangeAsset = async (exchange) => {
     });
   }
 
+  if (exchange?.exchangeType === "Bybit Spot") {
+    console.log("Bybit Spot");
+    client = new ccxt.bybit({
+      apiKey: exchange?.apiKey.trim(),
+      secret: exchange?.secretKey.trim(),
+    });
+  }
+  if (exchange?.exchangeType === "OKx Spot") {
+    console.log("OKx Spot");
+    client = new ccxt.okx({
+      apiKey: exchange?.apiKey,
+      secret: exchange?.secretKey,
+      password: exchange?.password,
+      // headers: { "x-simulated-trading": 1 },
+    });
+  }
+
   const binance = new ccxt.binance();
 
   try {
@@ -231,6 +248,35 @@ const getExchangeAsset = async (exchange) => {
       // console.log("Result from server: ", data);
       result = data.filter((item) => parseFloat(item.free) > 0);
 
+      console.log("getBalance result: ", result);
+    } else if (exchange?.exchangeType === "Bybit Spot") {
+      console.log("Bybit Spot Block");
+      let data = await client.fetchBalance();
+      // console.log(data.info.result.list);
+      console.log(data);
+      result = data.info.result.list;
+      // result = Object.keys(data)
+      //   .filter((key) => parseFloat(data[key]?.free || 0) > 0)
+      //   .map((key) => ({
+      //     currency: key,
+      //     free: data[key].free,
+      //     used: data[key].used,
+      //     total: data[key].total,
+      //   }));
+      console.log("getBalance result: ", result);
+    } else if (exchange?.exchangeType === "OKx Spot") {
+      console.log("OKx Spot Block");
+      let data = await client.fetchBalance();
+      console.log(data);
+      console.log(data.info.data);
+      result = Object.keys(data)
+        .filter((key) => parseFloat(data[key]?.free || 0) > 0)
+        .map((key) => ({
+          currency: key,
+          free: data[key].free,
+          used: data[key].used,
+          total: data[key].total,
+        }));
       console.log("getBalance result: ", result);
     } else {
       result = await client.getBalance();
@@ -284,6 +330,65 @@ const getExchangeAsset = async (exchange) => {
               asset["usdt_price"] = usdtBalance;
               asset["asset"] = asset.coin;
               asset["balance"] = asset.free;
+            } catch (error) {
+              console.log(error);
+            }
+          }
+        }
+        const { asset: coin_name, balance: quantity, usdt_price } = asset;
+        if (
+          coin_name !== undefined &&
+          quantity !== undefined &&
+          usdt_price !== undefined &&
+          !isNaN(usdt_price)
+        ) {
+          transformedResult.push({ coin_name, quantity, usdt_price });
+        }
+      }
+    } else if (exchange?.exchangeType === "Bybit Spot") {
+      console.log("Bybit spot is", result);
+      // const newResult = result.filter(exchange=> exchange.free !== "0")
+      for (const asset of result) {
+        if (asset.coin === "USDT") {
+          asset["usdt_price"] = +asset.availableBalance;
+          asset["asset"] = asset.coin;
+          asset["balance"] = asset.availableBalance;
+        } else {
+          const symbol = `${asset.coin}/USDT`;
+          console.log(symbol);
+          try {
+            const ticker = await binance.fetchTicker(symbol);
+
+            // Add the check here
+            if (ticker === undefined) {
+              console.log(`Ticker for ${symbol} is undefined.`);
+              continue; // Skip to the next iteration
+            }
+
+            const usdtPrice = ticker.last;
+            const usdtBalance = parseFloat(asset.availableBalance) * usdtPrice;
+            asset["usdt_price"] = usdtBalance;
+            asset["asset"] = asset.coin;
+            asset["balance"] = asset.availableBalance;
+          } catch (err) {
+            console.log(err);
+            const symbol = `${asset.coin}/BUSD`;
+            console.log(symbol);
+            try {
+              const ticker = await binance.fetchTicker(symbol);
+
+              // Add the check here too
+              if (ticker === undefined) {
+                console.log(`Ticker for ${symbol} is undefined.`);
+                continue; // Skip to the next iteration
+              }
+
+              const usdtPrice = ticker.last;
+              const usdtBalance =
+                parseFloat(asset.availableBalance) * usdtPrice;
+              asset["usdt_price"] = usdtBalance;
+              asset["asset"] = asset.coin;
+              asset["balance"] = asset.availableBalance;
             } catch (error) {
               console.log(error);
             }
