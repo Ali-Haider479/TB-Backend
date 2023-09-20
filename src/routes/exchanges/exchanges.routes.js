@@ -19,6 +19,12 @@ router.get("/:id", exchangesController.getUserExchanges);
 router.get("/single/:id", exchangesController.getSingleExchanges);
 //List all Exchanges
 router.get("/", exchangesController.getExchanges);
+router.get(
+  "/update-balance/user-id/:id",
+  exchangesController.updateBalanceHistory
+);
+//Update Exchange
+router.patch("/add-to-portfolio/:id", exchangesController.addToPortfolio);
 //Delete an Exchange
 router.delete("/:id", exchangesController.deleteExchange);
 

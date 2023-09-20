@@ -74,7 +74,7 @@ exports.getAllPortfolioByUserId = async (req, res) => {
         "SELECT * FROM assets WHERE portfolio_id = $1",
         [portfolio.id]
       );
-
+      console.log("PORTFOLIO USER", assets);
       result.push({
         exchange,
         portfolio,
@@ -172,8 +172,6 @@ exports.refreshAndGetAllPortfoliosByUserId = async (req, res) => {
         assets.sort((a, b) => b.usdt_price - a.usdt_price);
 
         console.log("Transformed Result sorted in descending order: ", assets);
-
-
 
         const totalUsdtPrice = assets.reduce((sum, item) => {
           const usdtPrice =
@@ -361,20 +359,27 @@ const getExchangeAsset = async (exchange) => {
       return new Promise(async (resolve) => {
         try {
           if (asset.coin === "USDT" || asset.asset === "USDT") {
-            resolve({ asset: asset.coin || asset.asset, usdt_price: asset.balance });
+            resolve({
+              asset: asset.coin || asset.asset,
+              usdt_price: asset.balance,
+            });
           } else {
             const baseSymbol = `${asset.coin || asset.asset}/USDT`;
             const alternativeSymbol = `${asset.coin || asset.asset}/BUSD`;
 
             let ticker = await binance.fetchTicker(baseSymbol).catch(() => {
-              console.log(`Error fetching ${baseSymbol}. Trying ${alternativeSymbol}...`);
+              console.log(
+                `Error fetching ${baseSymbol}. Trying ${alternativeSymbol}...`
+              );
               return binance.fetchTicker(alternativeSymbol);
             });
 
             resolve(ticker);
           }
         } catch (err) {
-          console.log(`Error processing asset ${asset.coin || asset.asset}. Skipping...`);
+          console.log(
+            `Error processing asset ${asset.coin || asset.asset}. Skipping...`
+          );
           resolve(undefined);
         }
       });
@@ -389,39 +394,40 @@ const getExchangeAsset = async (exchange) => {
 
       if (ticker === undefined) {
         console.log(`Ticker for ${coin_name} is undefined.`);
-        return; 
+        return;
       }
 
       const usdtPrice = ticker.last;
       const usdtBalance = parseFloat(quantity) * usdtPrice;
-      if (coin_name === 'USDT'){
+      if (coin_name === "USDT") {
         transformedResult.push({ coin_name, quantity, usdt_price: quantity });
+      } else {
+        if (
+          coin_name !== undefined &&
+          quantity !== undefined &&
+          usdtPrice !== undefined &&
+          !isNaN(usdtPrice)
+        ) {
+          transformedResult.push({
+            coin_name,
+            quantity,
+            usdt_price: usdtBalance,
+          });
+        }
       }
-      else{
-
-
-      if (
-        coin_name !== undefined &&
-        quantity !== undefined &&
-        usdtPrice !== undefined &&
-        !isNaN(usdtPrice)
-      ) {
-        transformedResult.push({ coin_name, quantity, usdt_price: usdtBalance });
-      }
-    }
     });
-    
 
     const objectCount = transformedResult.filter(Boolean).length;
-    console.log("Number of actual objects in Transformed Result: ", objectCount);
+    console.log(
+      "Number of actual objects in Transformed Result: ",
+      objectCount
+    );
 
     return transformedResult;
   } catch (err) {
     console.error("getBalance error: ", err);
   }
 };
-
-
 
 // const getExchangeAsset = async (exchange) => {
 //   console.log("get assets", exchange);
@@ -482,7 +488,7 @@ const getExchangeAsset = async (exchange) => {
 //           asset["usdt_price"] = +asset.free;
 //           asset["asset"] = asset.coin;
 //           asset["balance"] = asset.free;
-//         } 
+//         }
 //         else {
 //           const symbol = `${asset.coin}/USDT`;
 //           console.log(symbol);
@@ -534,7 +540,6 @@ const getExchangeAsset = async (exchange) => {
 //         }
 //       }
 
-      
 //     } else {
 //       for (const asset of result) {
 //         if (asset.asset === "USDT") {
@@ -552,7 +557,7 @@ const getExchangeAsset = async (exchange) => {
 //     }
 //     // console.log(transformedResult);
 //     console.log("Length of Transformed Result: ", transformedResult.length);
-    
+
 //     return transformedResult;
 //   } catch (err) {
 //     console.error("getBalance error: ", err);

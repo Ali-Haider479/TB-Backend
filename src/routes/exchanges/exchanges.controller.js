@@ -6,6 +6,8 @@ const fetch = require("node-fetch");
 const { USDMClient, MainClient } = require("binance");
 const ccxt = require("ccxt");
 
+const axios = require("axios");
+
 const cryptoSymbols = [
   "BTC", // Bitcoin
   "ETH", // Ethereum
@@ -68,7 +70,7 @@ exports.createExchange = async (req, res) => {
     const portfolioId = portfolio.id;
 
     const assetQuery =
-      "INSERT INTO assets (coin_name, quantity, usdt_price, portfolio_id) VALUES ($1, $2, $3, $4)";
+      "INSERT INTO assets (coin_name, quantity, usdt_price, change_24h, portfolio_id) VALUES ($1, $2, $3, $4, $5)";
 
     const assetValues = assets.map((asset) => [
       `${asset.coin_name}`,
@@ -76,6 +78,7 @@ exports.createExchange = async (req, res) => {
       typeof asset.usdt_price === "string"
         ? parseFloat(asset.usdt_price)
         : asset.usdt_price,
+      asset.change_24h,
       portfolioId, // Replace `portfolioId` with the actual portfolio ID
     ]);
 
@@ -101,6 +104,116 @@ exports.createExchange = async (req, res) => {
       },
       assets,
     });
+  } catch (error) {
+    console.error("Error creating exchange:", error);
+    res.status(500).json({ error: "Failed to create exchange" });
+  }
+};
+
+exports.updateBalanceHistory = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    console.log(userId, req.body);
+
+    const exchanges = await db.any(
+      "SELECT * FROM exchanges WHERE user_id = $1 ORDER BY id ASC",
+      [userId]
+    );
+    // console.log(exchanges);
+
+    const exchangeAssets = await Promise.all(
+      exchanges.map(async (exchange) => {
+        const assets = await getExchangeAsset({
+          exchangeName: exchange.exchange_name,
+          exchangeType: exchange.exchange_type,
+          apiKey: exchange.api_key,
+          secretKey: exchange.secret_key,
+        });
+        console.log(exchange.exchange_name, assets);
+
+        const totalUsdtPrice = assets.reduce((sum, item) => {
+          const usdtPrice =
+            typeof item.usdt_price === "string"
+              ? parseFloat(item.usdt_price)
+              : item.usdt_price;
+
+          // Check if usdtPrice is undefined or NaN
+          if (usdtPrice === undefined || isNaN(usdtPrice)) {
+            return sum; // Return current sum without adding
+          }
+
+          return sum + usdtPrice;
+        }, 0);
+
+        // console.log(totalUsdtPrice);
+
+        const selectPortfolioQuery =
+          "SELECT * FROM portfolios WHERE exchange_id = $1";
+        const portfolio = await db.oneOrNone(selectPortfolioQuery, [
+          exchange.id,
+        ]);
+
+        const updatePortfolioQuery =
+          "UPDATE portfolios SET balance = $1, locked_balance = $2 WHERE exchange_id = $3 AND id = $4 RETURNING *";
+        const updatePortfolioValues = [
+          totalUsdtPrice,
+          totalUsdtPrice,
+          exchange.id,
+          portfolio.id,
+        ];
+        const updatedPortfolio = await db.one(
+          updatePortfolioQuery,
+          updatePortfolioValues
+        );
+
+        const deleteAssetsQuery = "DELETE FROM assets WHERE portfolio_id = $1";
+        await db.none(deleteAssetsQuery, [portfolio.id]);
+
+        const assetQuery =
+          "INSERT INTO assets (coin_name, quantity, usdt_price, change_24h, portfolio_id) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+
+        const assetValues = assets.map((asset) => [
+          `${asset.coin_name}`,
+          parseFloat(asset.quantity),
+          typeof asset.usdt_price === "string"
+            ? parseFloat(asset.usdt_price)
+            : asset.usdt_price,
+          asset.change_24h,
+          portfolio.id, // Replace `portfolioId` with the actual portfolio ID
+        ]);
+
+        const addedAssets = await Promise.all(
+          assetValues.map((asset) => db.one(assetQuery, asset))
+        );
+
+        // console.log(assetValues);
+
+        // await db.many(assetQuery, assetValues);
+
+        const balanceHistoryQuery =
+          "INSERT INTO balance_history (date, balance, portfolio_id) VALUES (current_timestamp, $1, $2)";
+        const balanceHistoryValues = [totalUsdtPrice, portfolio.id];
+        await db.none(balanceHistoryQuery, balanceHistoryValues);
+
+        const selectBalanceHistoryQuery =
+          "SELECT * FROM balance_history WHERE portfolio_id = $1";
+        const balanceHistories = await db.manyOrNone(
+          selectBalanceHistoryQuery,
+          [portfolio.id]
+        );
+
+        return {
+          exchange,
+          portfolio: updatedPortfolio,
+          assets: addedAssets,
+          balanceHistories,
+        };
+      })
+    );
+
+    // console.log(exchangeAssets);
+
+    res.status(200).json(exchangeAssets);
   } catch (error) {
     console.error("Error creating exchange:", error);
     res.status(500).json({ error: "Failed to create exchange" });
@@ -176,6 +289,7 @@ exports.getUserExchanges = async (req, res) => {
               typeof asset.usdt_price === "string"
                 ? parseFloat(asset.usdt_price)
                 : asset.usdt_price,
+            change_24h: asset.change_24h,
           })),
         };
       })
@@ -187,6 +301,17 @@ exports.getUserExchanges = async (req, res) => {
   } catch (error) {
     console.error("Error connecting to PostgreSQL:", error);
     res.status(500).json({ error: "Failed to fetch exchanges and assets" });
+  }
+};
+
+const fetch24hChangeFromCoinGecko = async (coinId) => {
+  try {
+    const response = await axios.get(
+      `https://api.coingecko.com/api/v3/coins/${coinId}`
+    );
+    return response.data.market_data.price_change_percentage_24h.toFixed(2);
+  } catch (error) {
+    console.error(`Error fetching data from CoinGecko: ${error}`);
   }
 };
 
@@ -245,15 +370,15 @@ const getExchangeAsset = async (exchange) => {
     if (exchange?.exchangeType === "Binance Spot") {
       console.log("Binance Spot Block");
       let data = await client.getBalances();
-      // console.log("Result from server: ", data);
+      console.log("Result from server: ", data);
       result = data.filter((item) => parseFloat(item.free) > 0);
 
-      console.log("getBalance result: ", result);
+      // console.log("getBalance result: ", result);
     } else if (exchange?.exchangeType === "Bybit Spot") {
-      console.log("Bybit Spot Block");
+      // console.log("Bybit Spot Block");
       let data = await client.fetchBalance();
       // console.log(data.info.result.list);
-      console.log(data);
+      // console.log(data);
       result = data.info.result.list;
       // result = Object.keys(data)
       //   .filter((key) => parseFloat(data[key]?.free || 0) > 0)
@@ -263,12 +388,12 @@ const getExchangeAsset = async (exchange) => {
       //     used: data[key].used,
       //     total: data[key].total,
       //   }));
-      console.log("getBalance result: ", result);
+      // console.log("getBalance result: ", result);
     } else if (exchange?.exchangeType === "OKx Spot") {
       console.log("OKx Spot Block");
       let data = await client.fetchBalance();
-      console.log(data);
-      console.log(data.info.data);
+      // console.log(data);
+      // console.log(data.info.data);
       result = Object.keys(data)
         .filter((key) => parseFloat(data[key]?.free || 0) > 0)
         .map((key) => ({
@@ -277,10 +402,10 @@ const getExchangeAsset = async (exchange) => {
           used: data[key].used,
           total: data[key].total,
         }));
-      console.log("getBalance result: ", result);
+      // console.log("getBalance result: ", result);
     } else {
       result = await client.getBalance();
-      console.log("getBalance result: ", result);
+      // console.log("getBalance result: ", result);
     }
     // const result = await client.getBalance();
     // console.log("getBalance result: ", result);
@@ -288,10 +413,14 @@ const getExchangeAsset = async (exchange) => {
     const transformedResult = [];
 
     if (exchange?.exchangeType === "Binance Spot") {
-      console.log("spot is", result);
+      // console.log("spot is", result);
       // const newResult = result.filter(exchange=> exchange.free !== "0")
       for (const asset of result) {
         if (asset.coin === "USDT") {
+          const usdtChange24h = await fetch24hChangeFromCoinGecko("tether");
+          const change_24h = usdtChange24h; // Adapt this line based on the actual API response
+
+          asset["change_24h"] = change_24h;
           asset["usdt_price"] = +asset.free;
           asset["asset"] = asset.coin;
           asset["balance"] = asset.free;
@@ -306,6 +435,8 @@ const getExchangeAsset = async (exchange) => {
               console.log(`Ticker for ${symbol} is undefined.`);
               continue; // Skip to the next iteration
             }
+            const change24h = ticker["change"]; // Assume 'percentage' is the field
+            asset["change_24h"] = change24h;
 
             const usdtPrice = ticker.last;
             const usdtBalance = parseFloat(asset.free) * usdtPrice;
@@ -324,6 +455,8 @@ const getExchangeAsset = async (exchange) => {
                 console.log(`Ticker for ${symbol} is undefined.`);
                 continue; // Skip to the next iteration
               }
+              const change24h = ticker["percentage"]; // Assume 'percentage' is the field
+              asset["change_24h"] = change24h;
 
               const usdtPrice = ticker.last;
               const usdtBalance = parseFloat(asset.free) * usdtPrice;
@@ -335,21 +468,35 @@ const getExchangeAsset = async (exchange) => {
             }
           }
         }
-        const { asset: coin_name, balance: quantity, usdt_price } = asset;
+        const {
+          asset: coin_name,
+          balance: quantity,
+          usdt_price,
+          change_24h,
+        } = asset;
         if (
           coin_name !== undefined &&
           quantity !== undefined &&
           usdt_price !== undefined &&
           !isNaN(usdt_price)
         ) {
-          transformedResult.push({ coin_name, quantity, usdt_price });
+          transformedResult.push({
+            coin_name,
+            quantity,
+            usdt_price,
+            change_24h,
+          });
         }
       }
     } else if (exchange?.exchangeType === "Bybit Spot") {
-      console.log("Bybit spot is", result);
+      // console.log("Bybit spot is", result);
       // const newResult = result.filter(exchange=> exchange.free !== "0")
       for (const asset of result) {
         if (asset.coin === "USDT") {
+          const usdtChange24h = await fetch24hChangeFromCoinGecko("tether");
+          const change_24h = usdtChange24h; // Adapt this line based on the actual API response
+
+          asset["change_24h"] = change_24h;
           asset["usdt_price"] = +asset.availableBalance;
           asset["asset"] = asset.coin;
           asset["balance"] = asset.availableBalance;
@@ -364,6 +511,10 @@ const getExchangeAsset = async (exchange) => {
               console.log(`Ticker for ${symbol} is undefined.`);
               continue; // Skip to the next iteration
             }
+            console.log("SPOT ByBit", ticker);
+
+            const change24h = ticker["info"]["change_rate"]; // Assume 'change_rate' is the field
+            asset["change_24h"] = change24h;
 
             const usdtPrice = ticker.last;
             const usdtBalance = parseFloat(asset.availableBalance) * usdtPrice;
@@ -383,6 +534,9 @@ const getExchangeAsset = async (exchange) => {
                 continue; // Skip to the next iteration
               }
 
+              const change24h = ticker["info"]["change_rate"]; // Assume 'change_rate' is the field
+              asset["change_24h"] = change24h;
+
               const usdtPrice = ticker.last;
               const usdtBalance =
                 parseFloat(asset.availableBalance) * usdtPrice;
@@ -394,29 +548,50 @@ const getExchangeAsset = async (exchange) => {
             }
           }
         }
-        const { asset: coin_name, balance: quantity, usdt_price } = asset;
+        const {
+          asset: coin_name,
+          balance: quantity,
+          usdt_price,
+          change_24h,
+        } = asset;
         if (
           coin_name !== undefined &&
           quantity !== undefined &&
           usdt_price !== undefined &&
           !isNaN(usdt_price)
         ) {
-          transformedResult.push({ coin_name, quantity, usdt_price });
+          transformedResult.push({
+            coin_name,
+            quantity,
+            usdt_price,
+            change_24h,
+          });
         }
       }
     } else {
       for (const asset of result) {
         if (asset.asset === "USDT") {
+          const usdtChange24h = await fetch24hChangeFromCoinGecko("tether");
+          const change_24h = usdtChange24h; // Adapt this line based on the actual API response
+
+          asset["change_24h"] = change_24h;
           asset["usdt_price"] = asset.balance;
         } else {
           const symbol = `${asset.asset}/USDT`;
           const ticker = await binance.fetchTicker(symbol);
+          const change24h = ticker["change"];
+          asset["change_24h"] = change24h;
           const usdtPrice = ticker.last;
           const usdtBalance = parseFloat(asset.balance) * usdtPrice;
           asset["usdt_price"] = usdtBalance;
         }
-        const { asset: coin_name, balance: quantity, usdt_price } = asset;
-        transformedResult.push({ coin_name, quantity, usdt_price });
+        const {
+          asset: coin_name,
+          balance: quantity,
+          usdt_price,
+          change_24h,
+        } = asset;
+        transformedResult.push({ coin_name, quantity, usdt_price, change_24h });
       }
     }
     // console.log(transformedResult);
@@ -434,6 +609,27 @@ exports.getExchanges = async (req, res) => {
     .catch((error) => {
       res.status(500).json("Error connecting to PostgreSQL:", error);
     });
+};
+
+exports.addToPortfolio = async (req, res) => {
+  try {
+    const exchangeId = parseInt(req.params.id);
+    const { addToPortfolio } = req.body;
+    console.log(exchangeId, addToPortfolio);
+
+    // Check your parameters, to make sure they are valid
+    if (isNaN(exchangeId)) {
+      return res.status(400).send("Bad Request");
+    }
+
+    const query = `UPDATE exchanges SET add_to_portfolio = $1 WHERE id = $2`;
+    await db.none(query, [addToPortfolio, exchangeId]);
+
+    res.status(200).send("Successfully updated exchanges");
+  } catch (error) {
+    console.error("Could not update exchanges:", error);
+    res.status(500).send("Internal Server Error");
+  }
 };
 
 // exports.deleteExchange = async (req, res) => {

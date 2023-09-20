@@ -19,15 +19,19 @@ exports.getAllLatestBalanceHistoryByUserId = async (req, res) => {
           [exchange.id]
         );
 
-        const balanceHistoryEntry = await db.oneOrNone(
-          "SELECT * FROM balance_history WHERE portfolio_id = $1 ORDER BY date DESC LIMIT 1",
+        // const balanceHistoryEntry = await db.oneOrNone(
+        //   "SELECT * FROM balance_history WHERE portfolio_id = $1 ORDER BY date DESC LIMIT 1",
+        //   [portfolio.id]
+        // );
+        const balanceHistoryEntries = await db.manyOrNone(
+          "SELECT * FROM balance_history WHERE portfolio_id = $1 ORDER BY date DESC",
           [portfolio.id]
         );
 
         return {
           exchange,
           portfolioId: portfolio.id,
-          balanceHistory: balanceHistoryEntry,
+          balanceHistory: balanceHistoryEntries,
         };
       })
     );
